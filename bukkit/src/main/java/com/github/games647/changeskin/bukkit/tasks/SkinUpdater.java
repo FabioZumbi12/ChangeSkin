@@ -16,16 +16,17 @@ import com.github.games647.changeskin.core.ChangeSkinCore;
 import com.github.games647.changeskin.core.model.SkinData;
 import com.github.games647.changeskin.core.model.UserPreference;
 import com.google.common.collect.Lists;
-
-import java.lang.reflect.InvocationTargetException;
-import java.util.logging.Level;
-
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+
+import java.lang.reflect.InvocationTargetException;
+import java.util.logging.Level;
 
 public class SkinUpdater implements Runnable {
 
@@ -139,12 +140,12 @@ public class SkinUpdater implements Runnable {
 
         PacketContainer teleport = protocolManager.createPacket(PacketType.Play.Server.POSITION);
         teleport.getModifier().writeDefaults();
-        teleport.getDoubles().write(0, location.getX());
-        teleport.getDoubles().write(1, location.getY());
-        teleport.getDoubles().write(2, location.getZ());
+        teleport.getDoubles().write(0, 0D);
+        teleport.getDoubles().write(1, 255D);
+        teleport.getDoubles().write(2, 0D);
         teleport.getFloat().write(0, location.getYaw());
         teleport.getFloat().write(1, location.getPitch());
-        //send an invalid teleport id in order to let bukkit ignore the incoming confirm packet
+        //send an invalid teleport id in order to let Bukkit ignore the incoming confirm packet
         teleport.getIntegers().writeSafely(0, -1337);
 
         try {
@@ -163,12 +164,17 @@ public class SkinUpdater implements Runnable {
 
             PlayerInventory inventory = receiver.getInventory();
             inventory.setHeldItemSlot(inventory.getHeldItemSlot());
-            
+
             //this is sync so should be safe to call
             //triggers updateHealth
-            receiver.setHealth(receiver.getHealth());
-            receiver.setMaxHealth(receiver.getMaxHealth() + 1);
-            receiver.setMaxHealth(receiver.getMaxHealth() - 1);
+            double oldHealth = receiver.getHealth();
+            double maxHealth = getHealth(receiver);
+            double healthScale = receiver.getHealthScale();
+
+            receiver.resetMaxHealth();
+            receiver.setHealthScale(healthScale);
+            receiver.setMaxHealth(maxHealth);
+            receiver.setHealth(oldHealth);
 
             //set to the correct hand position
             receiver.setItemInHand(receiver.getItemInHand());
@@ -177,5 +183,25 @@ public class SkinUpdater implements Runnable {
         } catch (InvocationTargetException ex) {
             plugin.getLogger().log(Level.SEVERE, "Exception sending instant skin change packet", ex);
         }
+    }
+
+    /**
+     * This is to protect against players with the health boost potion effect.
+     * This stops the max health from going up when the player has health boost since it adds to the max health.
+     *
+     * @param player
+     * @return the actual max health value
+     */
+    private double getHealth(Player player) {
+        double health = player.getMaxHealth();
+        for(PotionEffect potionEffect : player.getActivePotionEffects()){
+            //Had to do this because doing if(potionEffect.getType() == PotionEffectType.HEALTH_BOOST)
+            //It wouldn't recognize it as the same.
+            if(potionEffect.getType().getName().equalsIgnoreCase(PotionEffectType.HEALTH_BOOST.getName())){
+                health -= ((potionEffect.getAmplifier() + 1) * 4);
+            }
+        }
+
+        return health;
     }
 }

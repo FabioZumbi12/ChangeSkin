@@ -7,12 +7,8 @@ import com.github.games647.changeskin.core.model.RawPropertiesModel;
 import com.github.games647.changeskin.core.model.SkinData;
 import com.github.games647.changeskin.core.model.mojang.skin.PropertiesModel;
 import com.github.games647.changeskin.core.model.mojang.skin.TexturesModel;
-import com.google.common.io.CharStreams;
 import com.google.gson.Gson;
-import com.google.gson.JsonParseException;
-
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.util.UUID;
@@ -26,14 +22,13 @@ public class MojangSkinApi {
     private static final String MCAPI_SKIN_URL = "https://mcapi.de/api/user/";
 
     private static final String UUID_URL = "https://api.mojang.com/users/profiles/minecraft/";
-    private static final String MCAPI_UUID_URL = "https://mcapi.ca/uuid/player/";
 
     private static final String VALID_USERNAME = "^\\w{2,16}$";
 
     private static final int RATE_LIMIT_ID = 429;
 
     private final Gson gson = new Gson();
-    
+
     private final ConcurrentMap<Object, Object> requests;
     private final Logger logger;
     private final int rateLimit;
@@ -57,22 +52,21 @@ public class MojangSkinApi {
         }
 
         if (requests.size() >= rateLimit || System.currentTimeMillis() - lastRateLimit < 1_000 * 60 * 10) {
-//            logger.fine("STILL WAITING FOR RATE_LIMIT - TRYING SECOND API");
-            return getUUIDFromAPI(playerName);
+            return null;
         }
 
         requests.put(new Object(), new Object());
 
         BufferedReader reader = null;
         try {
-            
+
             HttpURLConnection httpConnection = ChangeSkinCore.getConnection(UUID_URL + playerName);
             if (httpConnection.getResponseCode() == HttpURLConnection.HTTP_NO_CONTENT) {
                 throw new NotPremiumException(playerName);
             } else if (httpConnection.getResponseCode() == RATE_LIMIT_ID) {
-                logger.info("RATE_LIMIT REACHED - TRYING THIRD-PARTY API");
+                logger.info("RATE_LIMIT REACHED");
                 lastRateLimit = System.currentTimeMillis();
-                return getUUIDFromAPI(playerName);
+                return null;
             }
 
             InputStreamReader inputReader = new InputStreamReader(httpConnection.getInputStream());
@@ -83,35 +77,10 @@ public class MojangSkinApi {
                 String id = playerProfile.getId();
                 return ChangeSkinCore.parseId(id);
             }
-        } catch (IOException | JsonParseException ex) {
+        } catch (Exception ex) {
             logger.log(Level.SEVERE, "Tried converting player name to uuid", ex);
         } finally {
             ChangeSkinCore.closeQuietly(reader, logger);
-        }
-
-        return null;
-    }
-
-    public UUID getUUIDFromAPI(String playerName) throws NotPremiumException {
-        InputStreamReader inputReader = null;
-        try {
-            HttpURLConnection httpConnection = ChangeSkinCore.getConnection(MCAPI_UUID_URL + playerName);
-
-            inputReader = new InputStreamReader(httpConnection.getInputStream());
-            String line = CharStreams.toString(inputReader);
-            if (line != null && !line.equals("null")) {
-                PlayerProfile playerProfile = gson.fromJson(line, PlayerProfile[].class)[0];
-                String id = playerProfile.getId();
-                if (id == null || id.equalsIgnoreCase("null")) {
-                    throw new NotPremiumException(line);
-                }
-                
-                return ChangeSkinCore.parseId(id);
-            }
-        } catch (IOException | JsonParseException ex) {
-            logger.log(Level.SEVERE, "Tried converting player name to uuid from third-party api", ex);
-        } finally {
-            ChangeSkinCore.closeQuietly(inputReader, logger);
         }
 
         return null;
@@ -150,7 +119,7 @@ public class MojangSkinApi {
                     return skinData;
                 }
             }
-        } catch (IOException | JsonParseException ex) {
+        } catch (Exception ex) {
             logger.log(Level.SEVERE, "Tried downloading skin data from Mojang", ex);
         }
 
@@ -177,7 +146,7 @@ public class MojangSkinApi {
                 SkinData skinData = new SkinData(encodedSkin, signature);
                 return skinData;
             }
-        } catch (IOException | JsonParseException ex) {
+        } catch (Exception ex) {
             logger.log(Level.SEVERE, "Tried downloading skin data from Mojang", ex);
         }
 
